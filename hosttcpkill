@@ -1,0 +1,71 @@
+#!/usr/bin/env python
+
+import re
+import sys
+import argparse
+import subprocess
+
+parser = argparse.ArgumentParser()
+parser.add_argument("pid", help="the pid to kill the database connection for")
+parser.add_argument("host", help="the host the connection is targeting")
+parser.add_argument("--port", help=("the port the connection is targeting, you "
+                                    "may need to supply the name and not just "
+                                    "the number"))
+parser.add_argument("--dry-run", action="store_true",
+                    help="don't actualy kill, just print the target")
+
+args = parser.parse_args()
+
+def run(args, capture=True):
+
+    kwargs = {}
+    if capture:
+        kwargs = {
+            "stdout": subprocess.PIPE,
+        }
+
+    process = subprocess.Popen(args, **kwargs)
+    stdout, _ = process.communicate()
+    
+    if stdout is not None:
+        stdout = stdout.split("\n")
+
+    return stdout
+
+# first, read the file descriptors
+paths = run(["ls", "-lh", "/proc/{}/fd".format(args.pid)])
+
+# find the socket ones
+sockets = []
+for path in paths:
+    match = re.search(r'socket:\[(\d+)\]', path)
+    if match:
+        sockets.append(match.groups()[0])
+
+# find the socket one pointing at "claims" and "5432"
+lsof = run(["lsof"])
+matched_port = None
+matched_line = None
+for socket in sockets:
+    for of in lsof:
+        if socket in of:
+            expr = r'TCP\s+\w+:(\d+)->' + re.escape(args.host)
+            if args.port:
+                expr = expr + ":" + re.escape(args.port)
+            match = re.search(expr, of)
+            if match:
+                matched_port = match.groups()[0]
+                matched_line = of
+
+if not matched_port:
+    sys.stderr.write("unable to locate port for killing connection\n")
+    sys.stderr.flush()
+    sys.exit(1)
+
+if args.dry_run:
+    print("going to kill with port '{}' (line: {})"
+          .format(matched_port, matched_line))
+else:
+    # invoke tcpkill with the found source port and flags
+    run(["tcpkill", "-9", "port {}".format(matched_port)], capture=False)
+

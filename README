@@ -1,0 +1,18 @@
+Kill a TCP connection to a particular host, the lazy way
+
+Given a particular host and pid, tries to find an open TCP connection to it,
+and then interrupt the connection with tcpkill.
+
+Requires python, lsof, and tcpkill (from dsniff) to be installed.
+
+Examples:
+
+Find and kill a connection to foo.bar.com:
+~$ hosttcpkill 123 foo.bar.com
+
+Find and kill the connection to foo.bar.com where the destination port is 80:
+~$ hosttcpkill --port 80 123 foo.bar.com
+
+Don't actually kill anything, just print what we would do:
+~$ hosttcpkill --dry-run 123 foo.bar.com
+
